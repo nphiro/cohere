@@ -1,0 +1,6 @@
+[workspace]
+members = [
+  "cohere",
+  "example",
+]
+resolver = "3"
