@@ -3,7 +3,7 @@ use opentelemetry::{
     trace::{SpanKind, TraceContextExt, Tracer},
 };
 
-use cohere::{cmlt, env};
+use cohere::{cmlt, env, secure};
 
 #[derive(serde::Deserialize, Debug, Default)]
 struct Config {
@@ -34,4 +34,9 @@ fn main() {
     let span = cx.span();
     span.set_attribute(KeyValue::new("http.status_code", 200));
     span.end();
+
+    match secure::validate_totp("JBSWY3DPEHPK3PXP", "836896", 30) {
+        Ok(()) => println!("Valid TOTP"),
+        Err(e) => println!("Invalid TOTP: {}", e),
+    }
 }

@@ -1,6 +1,3 @@
 [workspace]
-members = [
-  "cohere",
-  "example",
-]
+members = ["cohere", "examples/*"]
 resolver = "3"

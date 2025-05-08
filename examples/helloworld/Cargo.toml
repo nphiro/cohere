@@ -1,9 +1,9 @@
 [package]
 edition = "2024"
-name = "example"
+name = "helloworld"
 version = "0.1.0"
 
 [dependencies]
-cohere = { path = "../cohere" }
+cohere = { path = "../../cohere" }
 opentelemetry = "0.29.1"
 serde = { version = "1.0.219", features = ["derive"] }
