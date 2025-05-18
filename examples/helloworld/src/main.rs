@@ -1,17 +1,15 @@
-use opentelemetry::{
-    Context, KeyValue, global,
-    trace::{SpanKind, TraceContextExt, Tracer},
-};
+use std::{thread::sleep, time::Duration};
 
-use cohere::{cmlt, env, secure};
+use cohere::{env, instrument, secure};
+use rand::Rng;
 
 #[derive(serde::Deserialize, Debug, Default)]
 struct Config {
     url: String,
 }
 
-fn main() {
-    let _shutdown = cmlt::init();
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let _inst_guard = instrument::init("github.com/nphiro", "cohere")?;
 
     let mut config = Config::default();
 
@@ -19,24 +17,30 @@ fn main() {
 
     println!("URL: {}", config.url);
 
-    let tracer = global::tracer("cohere");
-
-    let span = tracer
-        .span_builder("my_span")
-        .with_kind(SpanKind::Client)
-        .with_attributes([
-            KeyValue::new("http.method", "GET"),
-            KeyValue::new("http.url", "https://example.com"),
-        ])
-        .start(&tracer);
-
-    let cx = Context::current_with_span(span);
-    let span = cx.span();
-    span.set_attribute(KeyValue::new("http.status_code", 200));
-    span.end();
+    tracing::info!(config.url, "Will this work?");
+    let span = tracing::info_span!("Starting application");
+    let _enter = span.enter();
+    tracing::info!(config.url, "Hello, world!");
+    tracing::info!("Adding numbers");
+    add(get_random_number(), get_random_number());
 
     match secure::validate_totp("JBSWY3DPEHPK3PXP", "836896", 30) {
         Ok(()) => println!("Valid TOTP"),
         Err(e) => println!("Invalid TOTP: {}", e),
     }
+
+    Ok(())
+}
+
+#[tracing::instrument]
+fn add(a: i32, b: i32) -> i32 {
+    tracing::info!(test = 4, "Adding {} and {}", a, b);
+    sleep(Duration::from_secs(3));
+    a + b
+}
+
+#[tracing::instrument(fields(custom.label = "test"))]
+fn get_random_number() -> i32 {
+    let mut rng = rand::rng();
+    rng.random_range(1..=100)
 }

@@ -6,4 +6,6 @@ version = "0.1.0"
 [dependencies]
 cohere = { path = "../../cohere" }
 opentelemetry = "0.29.1"
+rand = "0.9.1"
 serde = { version = "1.0.219", features = ["derive"] }
+tracing = "0.1.41"
