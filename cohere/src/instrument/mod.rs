@@ -1,3 +1,4 @@
+mod logging;
 mod tracing;
 
 use opentelemetry_sdk::trace as sdktrace;
