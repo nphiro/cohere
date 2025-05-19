@@ -1,6 +1,8 @@
-use opentelemetry::global::{self, ObjectSafeSpan};
 use opentelemetry::{
-    Context, KeyValue, baggage::BaggageExt, propagation::TextMapCompositePropagator,
+    Context, KeyValue,
+    baggage::BaggageExt,
+    global::{self, ObjectSafeSpan},
+    propagation::TextMapCompositePropagator,
     trace::TracerProvider,
 };
 use opentelemetry_sdk::{
@@ -16,17 +18,15 @@ use tracing_subscriber::layer::SubscriberExt;
 use super::logging::LogLayer;
 
 pub fn init(org: &str, project: &str) -> anyhow::Result<SdkTracerProvider> {
-    let baggage_propagator = BaggagePropagator::new();
-    let trace_context_propagator = TraceContextPropagator::new();
     let composite_propagator = TextMapCompositePropagator::new(vec![
-        Box::new(baggage_propagator),
-        Box::new(trace_context_propagator),
+        Box::new(BaggagePropagator::new()),
+        Box::new(TraceContextPropagator::new()),
     ]);
     global::set_text_map_propagator(composite_propagator);
 
     let provider = SdkTracerProvider::builder()
         .with_span_processor(EnrichWithBaggageSpanProcessor)
-        // .with_simple_exporter(SpanExporter::default())
+        .with_simple_exporter(SpanExporter::default())
         .with_resource(
             Resource::builder()
                 .with_service_name(project.to_owned())

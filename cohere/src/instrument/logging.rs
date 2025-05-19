@@ -14,7 +14,7 @@ where
         let mut visitor = Visitor::default();
         event.record(&mut visitor);
 
-        let lvl = event.metadata().level().to_string();
+        let lvl = event.metadata().level();
 
         if let Some(span) = ctx.event_span(event) {
             let opt_span_id = span
@@ -81,8 +81,8 @@ struct Event {
 }
 
 impl Visitor {
-    fn print(self, level: String, trace_id: String, span_id: String) {
-        let level = level.to_lowercase();
+    fn print(self, level: &tracing::Level, trace_id: String, span_id: String) {
+        let level = level.to_string().to_lowercase();
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
