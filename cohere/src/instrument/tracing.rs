@@ -12,8 +12,7 @@ use opentelemetry_sdk::{
     trace::{SdkTracerProvider, Span, SpanProcessor},
 };
 use opentelemetry_stdout::SpanExporter;
-use tracing_subscriber::Registry;
-use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::{Registry, layer::SubscriberExt};
 
 use super::logging::LogLayer;
 

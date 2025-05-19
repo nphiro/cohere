@@ -1,7 +1,9 @@
 use std::io::Write;
 
 use rustc_hash::FxHashMap;
+use serde_json::Value;
 use tracing::field::Visit;
+use tracing_opentelemetry::OtelData;
 use tracing_subscriber::Layer;
 
 pub struct LogLayer;
@@ -19,12 +21,12 @@ where
         if let Some(span) = ctx.event_span(event) {
             let opt_span_id = span
                 .extensions()
-                .get::<tracing_opentelemetry::OtelData>()
+                .get::<OtelData>()
                 .and_then(|otd| otd.builder.span_id);
             let opt_trace_id = span.scope().last().and_then(|root_span| {
                 root_span
                     .extensions()
-                    .get::<tracing_opentelemetry::OtelData>()
+                    .get::<OtelData>()
                     .and_then(|otd| otd.builder.trace_id)
             });
 
@@ -39,27 +41,35 @@ where
 
 #[derive(Default)]
 struct Visitor {
-    msg: String,
-    attrs: FxHashMap<String, String>,
+    attrs: FxHashMap<String, Value>,
 }
 
 impl Visit for Visitor {
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
-        if field.name() == "message" {
-            self.msg = format!("{:?}", value);
-        } else {
-            self.attrs
-                .insert(field.name().to_string(), format!("{:?}", value));
-        }
+        self.attrs.insert(
+            field.name().to_string(),
+            Value::String(format!("{:?}", value)),
+        );
+    }
+
+    fn record_i64(&mut self, field: &tracing::field::Field, value: i64) {
+        self.attrs
+            .insert(field.name().to_string(), Value::Number(value.into()));
+    }
+
+    fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
+        self.attrs
+            .insert(field.name().to_string(), Value::Number(value.into()));
     }
 
     fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
-        if field.name() == "message" {
-            self.msg = value.into();
-        } else {
-            self.attrs
-                .insert(field.name().to_string(), value.to_string());
-        }
+        self.attrs
+            .insert(field.name().to_string(), Value::String(value.into()));
+    }
+
+    fn record_bool(&mut self, field: &tracing::field::Field, value: bool) {
+        self.attrs
+            .insert(field.name().to_string(), Value::Bool(value));
     }
 }
 
@@ -77,18 +87,23 @@ struct Event {
     span_id: String,
     #[serde(rename = "attrs")]
     #[serde(skip_serializing_if = "FxHashMap::is_empty")]
-    attributes: FxHashMap<String, String>,
+    attributes: FxHashMap<String, Value>,
 }
 
 impl Visitor {
-    fn print(self, level: &tracing::Level, trace_id: String, span_id: String) {
-        let level = level.to_string().to_lowercase();
+    fn print(mut self, level: &tracing::Level, trace_id: String, span_id: String) {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_millis() as i64;
+        let message: String = self
+            .attrs
+            .remove("message")
+            .and_then(|v| v.as_str().map(String::from))
+            .unwrap_or_else(|| "-".into());
+        let level = level.to_string().to_lowercase();
         let event = Event {
-            message: self.msg,
+            message,
             level,
             timestamp,
             trace_id,
