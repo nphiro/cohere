@@ -1,6 +1,6 @@
 use std::{thread::sleep, time::Duration};
 
-use cohere::{env, instrument, secure};
+use cohere::{env, instrument, secure, server};
 use rand::Rng;
 
 #[derive(serde::Deserialize, Debug, Default)]
@@ -8,7 +8,8 @@ struct Config {
     url: String,
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _inst_guard = instrument::init("github.com/nphiro", "cohere")?;
 
     let mut config = Config::default();
@@ -28,6 +29,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(()) => println!("Valid TOTP"),
         Err(e) => println!("Invalid TOTP: {}", e),
     }
+
+    server::serve_http(server::new_http(), 8000).await?;
 
     Ok(())
 }

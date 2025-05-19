@@ -61,7 +61,7 @@ where
 fn prepare_env() {
     let mut env = std::env::var("ENV").unwrap_or_default();
 
-    if !env.is_empty() {
+    if env.is_empty() {
         read_env_file();
         env = std::env::var("ENV").unwrap_or_default();
     }
