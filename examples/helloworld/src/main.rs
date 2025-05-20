@@ -1,5 +1,6 @@
 use std::{thread::sleep, time::Duration};
 
+use axum::extract::Path;
 use cohere::{env, instrument, secure, server};
 use rand::Rng;
 
@@ -8,9 +9,8 @@ struct Config {
     url: String,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let _inst_guard = instrument::init("github.com/nphiro", "cohere")?;
+fn main() {
+    let _inst_guard = instrument::init("github.com/nphiro", "cohere").unwrap();
 
     let mut config = Config::default();
 
@@ -18,21 +18,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("URL: {}", config.url);
 
-    tracing::info!(config.url, "Will this work?");
-    let span = tracing::info_span!("Starting application");
-    let _enter = span.enter();
-    tracing::info!(config.url, "Hello, world!");
-    tracing::info!("Adding numbers");
-    add(get_random_number(), get_random_number());
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            tracing::info!(config.url, "will this work?");
+            let span = tracing::info_span!("starting application");
+            let _enter = span.enter();
+            tracing::info!(config.url, "hello, world!");
+            tracing::info!("adding numbers");
+            add(get_random_number(), get_random_number());
 
-    match secure::validate_totp("JBSWY3DPEHPK3PXP", "836896", 30) {
-        Ok(()) => println!("Valid TOTP"),
-        Err(e) => println!("Invalid TOTP: {}", e),
-    }
+            match secure::validate_totp("JBSWY3DPEHPK3PXP", "836896", 30) {
+                Ok(()) => println!("Valid TOTP"),
+                Err(e) => println!("Invalid TOTP: {}", e),
+            }
 
-    server::serve_http(server::new_http(), 8000).await?;
+            let mut app = server::new_http();
 
-    Ok(())
+            app = app.route("/example", axum::routing::get(|| async { "Hello, World!" }));
+            app = app.route(
+                "/users/{id}",
+                axum::routing::get(|Path(id): Path<String>| async move {
+                    format!("Hello, User {}!", id)
+                }),
+            );
+
+            server::serve_http(app, 8000).await.unwrap();
+        });
 }
 
 #[tracing::instrument]

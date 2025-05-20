@@ -5,6 +5,7 @@ version = "0.1.0"
 
 [dependencies]
 anyhow = "1.0.98"
+axum = "0.8.4"
 cohere = { path = "../../cohere" }
 opentelemetry = "0.29.1"
 rand = "0.9.1"
