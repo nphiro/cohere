@@ -46,16 +46,12 @@ pub fn add_http_route(app: Router, path: &'static str, method_router: MethodRout
     app.route(
         path,
         method_router.layer(from_fn(move |req: Request, next: Next| {
-            http_request_trace(path.to_string(), req, next)
+            http_request_trace(path, req, next)
         })),
     )
 }
 
-async fn http_request_trace(
-    route: String,
-    req: Request,
-    next: Next,
-) -> Result<Response, StatusCode> {
+async fn http_request_trace(route: &str, req: Request, next: Next) -> Result<Response, StatusCode> {
     let uri = req.uri();
 
     let ip = get_client_ip(&req);
