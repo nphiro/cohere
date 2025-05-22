@@ -1,7 +1,10 @@
 use std::{thread::sleep, time::Duration};
 
 use axum::extract::Path;
-use cohere::{env, instrument, secure, server};
+use cohere::{
+    env, instrument, secure,
+    server::{self, add_http_route},
+};
 use rand::Rng;
 
 #[derive(serde::Deserialize, Debug, Default)]
@@ -37,13 +40,41 @@ fn main() {
 
             let mut app = server::new_http();
 
-            app = app.route("/example", axum::routing::get(|| async { "Hello, World!" }));
-            app = app.route(
+            app = add_http_route(
+                app,
+                "/example",
+                axum::routing::get(|| async { "Hello, World!" }),
+            );
+
+            app = add_http_route(
+                app,
                 "/users/{id}",
                 axum::routing::get(|Path(id): Path<String>| async move {
                     format!("Hello, User {}!", id)
                 }),
             );
+
+            app = add_http_route(
+                app,
+                "/add/{a}/{b}",
+                axum::routing::get(|Path((a, b)): Path<(i32, i32)>| async move {
+                    let sum = add(a, b);
+                    format!("Sum: {}", sum)
+                }),
+            );
+
+            let client = reqwest::Client::new();
+
+            let req = client.get("http://localhost:8000/add/5/10");
+
+            match cohere::client::send_http(req).await {
+                Ok(response) => {
+                    tracing::info!("Response: {:?}", response);
+                }
+                Err(err) => {
+                    tracing::error!("Error: {:?}", err);
+                }
+            }
 
             server::serve_http(app, 8000).await.unwrap();
         });

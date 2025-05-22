@@ -2,14 +2,15 @@ use axum::{
     Router,
     extract::Request,
     http::{self, StatusCode},
-    middleware::Next,
+    middleware::{Next, from_fn},
     response::{Json, Response},
-    routing::get,
+    routing::{MethodRouter, get},
     serve,
 };
 use opentelemetry::{global, propagation::Extractor};
 use serde_json::{Value, json};
 use std::net::SocketAddr;
+use tower_http::compression::CompressionLayer;
 use tracing::info;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
@@ -41,7 +42,60 @@ fn get_user_agent(req: &Request) -> String {
         .to_owned()
 }
 
-async fn http_request_log(req: Request, next: Next) -> Result<Response, StatusCode> {
+pub fn add_http_route(app: Router, path: &'static str, method_router: MethodRouter) -> Router {
+    app.route(
+        path,
+        method_router.layer(from_fn(move |req: Request, next: Next| {
+            http_request_trace(path.to_string(), req, next)
+        })),
+    )
+}
+
+async fn http_request_trace(
+    route: String,
+    req: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    let uri = req.uri();
+
+    let ip = get_client_ip(&req);
+    let user_agent = get_user_agent(&req);
+
+    let parent_cx = global::get_text_map_propagator(|propagator| {
+        propagator.extract(&HeaderExtractor(req.headers()))
+    });
+
+    let span = tracing::info_span!(
+        "http_server_request",
+        otel.name = format!("{} {}", req.method(), route),
+        otel.kind = "Server",
+        client.address = ip,
+        http.request.method = req.method().as_str(),
+        http.route = route,
+        network.protocal.version = format!("{:?}", req.version())
+            .strip_prefix("HTTP/")
+            .unwrap_or("ND"),
+        server.address = uri.host(),
+        url.path = uri.path(),
+        url.query = uri.query(),
+        url.scheme = uri.scheme_str(),
+        user_agent.original = user_agent,
+    );
+    span.set_parent(parent_cx);
+
+    let _enter = span.enter();
+
+    let response = http_request_log(req, next).await;
+
+    span.set_attribute(
+        "http.response.status_code",
+        response.status().as_u16() as i64,
+    );
+
+    Ok(response)
+}
+
+async fn http_request_log(req: Request, next: Next) -> Response {
     let ip = get_client_ip(&req);
     let user_agent = get_user_agent(&req);
 
@@ -56,58 +110,18 @@ async fn http_request_log(req: Request, next: Next) -> Result<Response, StatusCo
 
     info!(
         client.address = ip,
+        http.request.method = method,
+        http.response.latency_ms = latency_ms,
+        http.response.status_code = status,
+        url.path = path,
         user_agent.original = user_agent,
-        "[{}] {} - {} {}ms",
+        "[{}] {} - {}",
         status,
         method,
         path,
-        latency_ms
     );
 
-    Ok(response)
-}
-
-async fn http_request_trace(req: Request, next: Next) -> Result<Response, StatusCode> {
-    let uri = req.uri();
-    if uri.path() == HEALTHCHECK_PATH {
-        return Ok(next.run(req).await);
-    }
-
-    let ip = get_client_ip(&req);
-    let user_agent = get_user_agent(&req);
-
-    let parent_cx = global::get_text_map_propagator(|propagator| {
-        propagator.extract(&HeaderExtractor(req.headers()))
-    });
-
-    let span = tracing::info_span!(
-        "http_request",
-        otel.name = uri.path(),
-        otel.kind = "Server",
-        client.address = ip,
-        http.request.method = req.method().as_str(),
-        // http.route = "/users/{id}",
-        network.protocal.version = format!("{:?}", req.version())
-            .strip_prefix("HTTP/")
-            .unwrap_or("unknown"),
-        server.address = uri.host(),
-        url.path = uri.path(),
-        url.query = uri.query(),
-        url.scheme = uri.scheme_str(),
-        user_agent.original = user_agent,
-    );
-    span.set_parent(parent_cx);
-
-    let _enter = span.enter();
-
-    let response = next.run(req).await;
-
-    span.set_attribute(
-        "http.response.status_code",
-        response.status().as_u16() as i64,
-    );
-
-    Ok(response)
+    response
 }
 
 struct HeaderExtractor<'a>(&'a http::HeaderMap);
@@ -129,9 +143,8 @@ pub async fn serve_http(app: Router, port: u16) -> anyhow::Result<()> {
 
     serve(
         listener,
-        app.route(HEALTHCHECK_PATH, get(healthcheck))
-            .layer(axum::middleware::from_fn(http_request_log))
-            .layer(axum::middleware::from_fn(http_request_trace))
+        app.layer(CompressionLayer::new())
+            .route(HEALTHCHECK_PATH, get(healthcheck))
             .into_make_service_with_connect_info::<SocketAddr>(),
     )
     .with_graceful_shutdown(super::shutdown_signal())

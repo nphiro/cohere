@@ -1,6 +1,6 @@
 mod http;
 
-pub use http::{new_http, serve_http};
+pub use http::{add_http_route, new_http, serve_http};
 
 async fn shutdown_signal() {
     let ctrl_c = async {
