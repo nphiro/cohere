@@ -2,10 +2,25 @@ use axum::http;
 use http::HeaderMap;
 use opentelemetry::{global, propagation::Injector, trace::Status};
 use reqwest::{Error, RequestBuilder, Response};
-use tracing::info;
+use tracing::error;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-pub async fn send_http(builder: RequestBuilder) -> Result<Response, Error> {
+macro_rules! dyn_event {
+    ($lvl:ident, $($arg:tt)+) => {
+        match $lvl {
+            ::tracing::Level::TRACE => ::tracing::trace!($($arg)+),
+            ::tracing::Level::DEBUG => ::tracing::debug!($($arg)+),
+            ::tracing::Level::INFO => ::tracing::info!($($arg)+),
+            ::tracing::Level::WARN => ::tracing::warn!($($arg)+),
+            ::tracing::Level::ERROR => ::tracing::error!($($arg)+),
+        }
+    };
+}
+
+pub async fn send_http(
+    builder: RequestBuilder,
+    route_template: Option<&str>,
+) -> Result<Response, Error> {
     let req = match builder.try_clone() {
         Some(clone) => match clone.build() {
             Ok(req) => req,
@@ -22,12 +37,17 @@ pub async fn send_http(builder: RequestBuilder) -> Result<Response, Error> {
 
     let span = tracing::info_span!(
         "http_client_request",
-        otel.name = format!("{} {}", req.method(), req.url().path()),
+        otel.name = format!(
+            "{} {}",
+            req.method(),
+            route_template.unwrap_or(req.url().path())
+        ),
         otel.kind = "Client",
         http.request.method = method,
         server.address = req.url().domain(),
         server.port = req.url().port(),
         url.full = req.url().as_str(),
+        url.template = route_template,
     );
     let _enter = span.enter();
 
@@ -46,14 +66,17 @@ pub async fn send_http(builder: RequestBuilder) -> Result<Response, Error> {
 
     match &result {
         Ok(response) => {
+            let mut lvl = tracing::Level::INFO;
             let response_status = response.status().as_u16() as i64;
             span.set_attribute("http.response.status_code", response_status);
             if response_status >= 400 {
                 span.set_status(Status::Error {
                     description: format!("HTTP error: {}", response_status).into(),
                 });
+                lvl = tracing::Level::ERROR;
             }
-            info!(
+            dyn_event!(
+                lvl,
                 http.request.method = method,
                 http.response.latency_ms = latency_ms,
                 http.response.status_code = response_status,
@@ -66,7 +89,10 @@ pub async fn send_http(builder: RequestBuilder) -> Result<Response, Error> {
             );
         }
         Err(err) => {
-            info!(
+            span.set_status(Status::Error {
+                description: err.to_string().into(),
+            });
+            error!(
                 error.message = err.to_string(),
                 http.request.method = method,
                 http.response.latency_ms = latency_ms,
@@ -74,11 +100,8 @@ pub async fn send_http(builder: RequestBuilder) -> Result<Response, Error> {
                 url.query = query,
                 "[error] {} - {}",
                 req.method(),
-                req.url()
+                req.url(),
             );
-            span.set_status(Status::Error {
-                description: err.to_string().into(),
-            });
         }
     }
     result

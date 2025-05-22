@@ -67,7 +67,7 @@ fn main() {
 
             let req = client.get("http://localhost:8000/add/5/10");
 
-            match cohere::client::send_http(req).await {
+            match cohere::client::send_http(req, Some("/add/{a}/{b}")).await {
                 Ok(response) => {
                     tracing::info!("Response: {:?}", response);
                 }
